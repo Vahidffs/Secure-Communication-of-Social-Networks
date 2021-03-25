@@ -6,19 +6,20 @@ import threading
 from ast import literal_eval
 # Create a TCP/IP socket
 conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-neighbour_conns = []
+neighbour_conns = {}
 is_initiator = True
 conn.setblocking(0)
+
 neighbour_list = [('localhost', 10001),
                     ('localhost', 10002), ('localhost', 10003)]
+address = ('localhost', 10000)
 new_neighbour_list = []
 old_neighbour_list = []
 
-for _ in neighbour_list:
+for neighbour in neighbour_list:
     neighbour_conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    neighbour_conns.append(neighbour_conn)
+    neighbour_conns[neighbour] = neighbour_conn
     # Bind the socket to the port
-address = ('localhost', 10000)
 print('starting up on %s port %s' % address)
 conn.bind(address)
 
@@ -28,6 +29,7 @@ socket_list = []
 outputs = []
     # Sockets from which we expect to read
 outputs_available = threading.Event()
+Stree_available = threading.Event()
 input_queues = {}
 output_queues = {}
 output_lock = threading.Lock()
@@ -38,23 +40,24 @@ def main():
     print("back to main #################################################")
     if len(output_queues.keys()) == len(neighbour_list):
             if is_initiator == True:
-                initiator()
-    while len(neighbour_list) > (len(new_neighbour_list) + len(old_neighbour_list)):
-        continue
+                send_via_socket("Hello",neighbour_list)
+    
+    Stree_available.wait()    
+    print("Spanning Tree Created")
     t_socket.join()
 
 def sockets():
 
     while True:
         try:
-            for index, connection in enumerate(neighbour_conns):
-                if connection not in socket_list:
-                    connection.connect(neighbour_list[index])
-                    socket_list.append(connection)
+            for name,socket in neighbour_conns.items():
+                if socket not in socket_list:
+                    socket.connect(name)
+                    socket_list.append(socket)
                     #outputs.append(connection)
                     # Give the connection a queue for data we want to send
-                    output_queues[connection] = Queue.Queue()
-                    print(connection)
+                    output_queues[socket] = Queue.Queue()
+                    print(socket)
         except:
             continue
         else:
@@ -78,23 +81,22 @@ def sockets():
                 # if conn in outputs:
                 # outputs.remove(conn)
                 connection, client_address = s.accept()
-                print('new connection from', client_address)
+                #print('new connection from', client_address)
                 connection.setblocking(0)
                 inputs.append(connection)
                 
                 # Give the connection a queue for data we want to send
                 input_queues[connection] = Queue.Queue()
-                print(connection)
+                #print(connection)
             else:
-                data = s.recv(1024)
+                data = s.recv(2048)
                 if data:
                     # A readable client socket has data
                     print('received "%s" from %s' % (data, s.getpeername()))
-                    if b'Hello' in data:
-                        hello_recieved(str(data))
-                    if b'New' in data:
-                        new_recieved(str(data))
-                    input_queues[s].put(data)
+                    data_list =  str(data).split("~") 
+                    for data in data_list:
+                        input_queues[s].put(data+ '"')
+                    check_input_string(s)
                     # Add output channel for response
                     # if s not in outputs:
                     # outputs.append(s)
@@ -133,29 +135,58 @@ def sockets():
 
             # Remove message queue
             del output_queues[s]
-        
+        if len(neighbour_list) == (len(new_neighbour_list) + len(old_neighbour_list)):
+            Stree_available.set()
 
 
 def hello_recieved(data):
-    str_address = data.split("from ",1)[1]
-    address = literal_eval(str_address)
-    if address in new_neighbour_list:
-        send_via_socket("old",[address])
+    str_address = '"' + data.split("from ",1)[1]
+    address_tuple = ('localhost',int(''.join(c for c in str_address if c.isdigit())))  
+    if address_tuple in new_neighbour_list:
+        send_via_socket("Old",[address_tuple])
     else:
-        new_neighbour_list.append(address)
-        send_via_socket("new",[address for address in neighbour_list if address not in new_neighbour_list])
+        new_neighbour_list.append(address_tuple)
+        send_via_socket('New',[address_tuple])
+        send_via_socket("Hello",[send_hello for send_hello in neighbour_list if send_hello != address])
 
 
 def new_recieved(data):
-    pass
+    str_address = '"' + data.split("from ",1)[1]
+    address_tuple = ('localhost',int(''.join(c for c in str_address if c.isdigit())))   
+    if address_tuple not in new_neighbour_list: 
+        new_neighbour_list.append(address_tuple)
+
+def old_recieved(data):
+    str_address = '"' + data.split("from ",1)[1]
+    address_tuple = ('localhost',int(''.join(c for c in str_address if c.isdigit())))   
+    if address_tuple not in new_neighbour_list or old_neighbour_list:   
+        old_neighbour_list.append(address_tuple,)
 def initiator():
     for conn in socket_list:
         output_queues[conn].put(("Hello " + str(address)).encode())
         with output_lock:
             outputs.append(conn)
 
-
+def check_input_string(s):
+    while not input_queues[s].empty():
+        try:
+            data = input_queues[s].get(False)
+        except Queue.Empty:
+        # Handle empty queue here
+            pass
+        else:
+            if 'Hello' in data:
+                hello_recieved(data)
+            if 'New' in data:
+                new_recieved(data)
+            if 'Old' in data:
+                old_recieved(data)
 def send_via_socket(data,address_list):
-    pass
+    for name,socket in neighbour_conns.items():
+            if name in address_list:
+                output_queues[socket].put((data +" from " + str(address) + "~").encode())
+                with output_lock:
+                    outputs.append(socket)
+
 if __name__ == '__main__':
     main()
