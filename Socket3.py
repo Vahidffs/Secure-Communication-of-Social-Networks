@@ -13,12 +13,12 @@ from Crypto.Hash import SHA256
 # Create a TCP/IP socket
 conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 neighbour_conns = {}
-is_initiator = False
+is_initiator = True
 conn.setblocking(0)
-
 neighbour_list = [('localhost',10000),('localhost',10001),('localhost',10002)]
 address = ('localhost', 10003)
 
+                    
 new_neighbour_list = []
 old_neighbour_list = []
 AES_key_list = []
@@ -53,9 +53,7 @@ def main():
     if len(output_queues.keys()) == len(neighbour_list):
             if is_initiator == True:
                 send_via_socket("Hello",0,neighbour_list)
-    Stree_available.wait() 
-    print(new_neighbour_list)
-    print(old_neighbour_list)   
+    Stree_available.wait()  
     print("Spanning Tree Created")
     public_key = DH_object.getPublicKey()
     send_via_socket("DHKey" , public_key,new_neighbour_list)
@@ -66,7 +64,6 @@ def main():
         h.update((sharedkey_list[neighbour]).to_bytes(256,byteorder='big'))
         AES_key = AES.AES_Key_Creator(h.digest())
         AES_key_list.append(AES_key)
-    print(AES_key_list)
 def sockets():
 
     while True:
@@ -146,7 +143,7 @@ def sockets():
                     print('output queue for', s.getpeername(), 'is empty')
                     # outputs.remove(s)
                 else:
-                    print('sending "%s" to %s' % (next_msg, s.getpeername()))
+                    #print('sending "%s" to %s' % (next_msg, s.getpeername()))
                     s.send(next_msg)
                     outputs.remove(s)
         # Handle "exceptional conditions"
@@ -164,7 +161,6 @@ def sockets():
             Stree_completed = True
             Stree_available.set()
             if len(sharedkey_list) == len(new_neighbour_list):
-                print(len(sharedkey_list))
                 DH_available.set()
 
 def hello_recieved(data):
@@ -183,7 +179,7 @@ def new_recieved(data):
 
 def old_recieved(data):
     if data[-1] not in new_neighbour_list or old_neighbour_list:   
-        old_neighbour_list.append(data[-1])
+        old_neighbour_list.append(data[-1],)
 def key_recieved(data):
     key = data[1]
     sharedkey_list[data[-1]] = DH_object.update(key)
@@ -224,10 +220,10 @@ def check_input_string(s):
                 if data[0] == 'Nonce':
                     store_nonce(data)
 def send_via_socket(data_type,data,address_list):
-    #print("sending this",data,"to this",address_list)
     for name,socket in neighbour_conns.items():
             if name in address_list:
                 tupled_data = (data_type,data,address)
+                print("sending....",tupled_data)
                 serialized_data = pickle.dumps(tupled_data)
                 length_data = len(serialized_data)
                 final_data = (length_data).to_bytes(4,byteorder='big') + serialized_data
