@@ -4,6 +4,11 @@ import sys
 import queue as Queue
 import threading
 from ast import literal_eval
+from packages.DiffieHellman import keyCreation,dhfunc
+import time
+import pyDHE
+import packages.AES as localAES
+from Crypto.Hash import SHA256
 # Create a TCP/IP socket
 conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 neighbour_conns = {}
@@ -11,9 +16,12 @@ is_initiator = False
 conn.setblocking(0)
 neighbour_list = [('localhost',10000),('localhost',10001),('localhost',10002)]
 address = ('localhost', 10003)
+
 new_neighbour_list = []
 old_neighbour_list = []
-
+AES_key_list = {}
+sharedkey_list = {}
+DH_object = pyDHE.new()
 for neighbour in neighbour_list:
     neighbour_conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     neighbour_conns[neighbour] = neighbour_conn
@@ -28,6 +36,7 @@ outputs = []
     # Sockets from which we expect to read
 outputs_available = threading.Event()
 Stree_available = threading.Event()
+DH_available = threading.Event()
 input_queues = {}
 output_queues = {}
 output_lock = threading.Lock()
@@ -39,9 +48,30 @@ def main():
     if len(output_queues.keys()) == len(neighbour_list):
             if is_initiator == True:
                 send_via_socket("Hello",neighbour_list)
-    Stree_available.wait()    
+    Stree_available.wait() 
+    print(new_neighbour_list)
+    print(old_neighbour_list)   
     print("Spanning Tree Created")
-    t_socket.join()
+    public_key = DH_object.getPublicKey()
+    send_via_socket("Key " + str(public_key),new_neighbour_list)
+        #print(len(str(key)))
+    DH_available.wait()
+    for neighbour in new_neighbour_list: 
+        h = SHA256.new()   
+        h.update((str(sharedkey_list[neighbour])).encode("utf-8"))
+        print("neighbour",neighbour)
+        AES_key = localAES.AES_Key_Creator(h.digest())
+        AES_key_list[neighbour] = AES_key
+    print(AES_key_list)
+    message = "hello"
+    print(type(AES_key_list[('localhost',10002)]))
+    ciphertext , mac , nonce = localAES.AES_encrypt(AES_key_list[('localhost',10002)],message.encode())
+    print("nonce from node 3",nonce)
+    print("str nonce",str(nonce))
+    send_via_socket_encoded("MAC ", mac,[neighbour_list[-1]])
+    send_via_socket_encoded("Nonce ", nonce,[neighbour_list[-1]])
+    send_via_socket_encoded("Ciphertext ", ciphertext,[neighbour_list[-1]])
+    
 
 def sockets():
 
@@ -137,7 +167,9 @@ def sockets():
             del output_queues[s]
         if len(neighbour_list) == (len(new_neighbour_list) + len(old_neighbour_list)):
             Stree_available.set()
-
+            if len(sharedkey_list) == len(new_neighbour_list):
+                print(len(sharedkey_list))
+                DH_available.set()
 
 def hello_recieved(data):
     str_address = '"' + data.split("from ",1)[1]
@@ -162,6 +194,14 @@ def old_recieved(data):
     address_tuple = ('localhost',int(''.join(c for c in str_address if c.isdigit())))
     if address_tuple not in new_neighbour_list or old_neighbour_list:   
         old_neighbour_list.append(address_tuple,)
+def key_recieved(data):
+    str_temp = data.split("Key ",1)[1]
+    key_str,str_address = str_temp.split("from ",1)
+    str_address = '"' + str_address 
+    print(str_address)
+    address_tuple = ('localhost',int(''.join(c for c in str_address if c.isdigit()))) 
+    sharedkey_list[address_tuple] = DH_object.update(int(key_str))
+    
 def check_input_string(s):
     while not input_queues[s].empty():
         try:
@@ -176,12 +216,20 @@ def check_input_string(s):
                 new_recieved(data)
             if 'Old' in data:
                 old_recieved(data)
+            if 'Key' in data:
+                key_recieved(data)
 def send_via_socket(data,address_list):
+    #print("sending this",data,"to this",address_list)
     for name,socket in neighbour_conns.items():
             if name in address_list:
                 output_queues[socket].put((data +" from " + str(address) + "~").encode())
                 with output_lock:
                     outputs.append(socket)
-
+def send_via_socket_encoded(str_type,data,address_list):
+    for name,socket in neighbour_conns.items():
+            if name in address_list:
+                output_queues[socket].put(str_type.encode() + data + (" from " + str(address) + "~").encode())
+                with output_lock:
+                    outputs.append(socket)
 if __name__ == '__main__':
     main()

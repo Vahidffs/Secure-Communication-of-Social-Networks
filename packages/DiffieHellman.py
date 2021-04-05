@@ -1,4 +1,4 @@
-import pyDH
+import pyDHE
 key = 0
 def keyCreation():
     global key
