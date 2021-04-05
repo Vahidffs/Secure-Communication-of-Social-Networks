@@ -7,8 +7,7 @@ from ast import literal_eval
 from packages.DiffieHellman import keyCreation,dhfunc
 import time
 import pyDHE
-import pickle
-import packages.AES as AES
+import packages.AES as localAES
 from Crypto.Hash import SHA256
 # Create a TCP/IP socket
 conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -20,7 +19,7 @@ address = ('localhost', 10003)
 
 new_neighbour_list = []
 old_neighbour_list = []
-AES_key_list = []
+AES_key_list = {}
 sharedkey_list = {}
 DH_object = pyDHE.new()
 for neighbour in neighbour_list:
@@ -34,13 +33,10 @@ conn.bind(address)
 conn.listen(5)
 socket_list = []
 outputs = []
-nonces = {}
-macs = {}
     # Sockets from which we expect to read
 outputs_available = threading.Event()
 Stree_available = threading.Event()
 DH_available = threading.Event()
-Stree_completed = False
 input_queues = {}
 output_queues = {}
 output_lock = threading.Lock()
@@ -51,21 +47,32 @@ def main():
     print("back to main #################################################")
     if len(output_queues.keys()) == len(neighbour_list):
             if is_initiator == True:
-                send_via_socket("Hello",0,neighbour_list)
+                send_via_socket("Hello",neighbour_list)
     Stree_available.wait() 
     print(new_neighbour_list)
     print(old_neighbour_list)   
     print("Spanning Tree Created")
     public_key = DH_object.getPublicKey()
-    send_via_socket("DHKey" , public_key,new_neighbour_list)
+    send_via_socket("Key " + str(public_key),new_neighbour_list)
         #print(len(str(key)))
     DH_available.wait()
-    for neighbour in new_neighbour_list:    
-        h = SHA256.new()
+    for neighbour in new_neighbour_list: 
+        h = SHA256.new()   
         h.update((str(sharedkey_list[neighbour])).encode("utf-8"))
-        AES_key = AES.AES_Key_Creator(h.digest())
-        AES_key_list.append(AES_key)
+        print("neighbour",neighbour)
+        AES_key = localAES.AES_Key_Creator(h.digest())
+        AES_key_list[neighbour] = AES_key
     print(AES_key_list)
+    message = "hello"
+    print(type(AES_key_list[('localhost',10002)]))
+    ciphertext , mac , nonce = localAES.AES_encrypt(AES_key_list[('localhost',10002)],message.encode())
+    print("nonce from node 3",nonce)
+    print("str nonce",str(nonce))
+    send_via_socket_encoded("MAC ", mac,[neighbour_list[-1]])
+    send_via_socket_encoded("Nonce ", nonce,[neighbour_list[-1]])
+    send_via_socket_encoded("Ciphertext ", ciphertext,[neighbour_list[-1]])
+    
+
 def sockets():
 
     while True:
@@ -109,21 +116,20 @@ def sockets():
                 input_queues[connection] = Queue.Queue()
                 #print(connection)
             else:
-                data = s.recv(4096)
+                data = s.recv(2048)
                 if data:
-                    while data:
-                        #print('received "%s" from %s' % (data, s.getpeername()))
-                        length = int.from_bytes(data[:4],byteorder='big')
-                        print(length) 
-                        data_list = pickle.loads(data[4:length + 4])
-                        data = data[length+4:]
-                        #time.sleep(10)
-                        print(data_list)
-                        input_queues[s].put(data_list)
+                    # A readable client socket has data
+                    print('received "%s" from %s' % (data, s.getpeername()))
+                    data_list =  str(data).split("~") 
+                    for data_chunk in data_list:
+                        if data_chunk[-1] != '"':
+                            input_queues[s].put(data_chunk + '"')
+                        else:
+                            input_queues[s].put(data_chunk)
                     check_input_string(s)
-                        # Add output channel for response
-                        # if s not in outputs:
-                        # outputs.append(s)
+                    # Add output channel for response
+                    # if s not in outputs:
+                    # outputs.append(s)
                 else:
                     # Interpret empty result as closed connection
                     print('closing', client_address, 'after reading no data')
@@ -160,44 +166,42 @@ def sockets():
             # Remove message queue
             del output_queues[s]
         if len(neighbour_list) == (len(new_neighbour_list) + len(old_neighbour_list)):
-            Stree_completed = True
             Stree_available.set()
             if len(sharedkey_list) == len(new_neighbour_list):
                 print(len(sharedkey_list))
                 DH_available.set()
 
 def hello_recieved(data):
-    if data[-1] in new_neighbour_list:
-        send_via_socket("Old",0,[data[-1],])
+    str_address = '"' + data.split("from ",1)[1]
+    address_tuple = ('localhost',int(''.join(c for c in str_address if c.isdigit())))
+    if address_tuple in new_neighbour_list:
+        send_via_socket("Old",[address_tuple,])
     else:
-        new_neighbour_list.append([data[-1],],)
-        send_via_socket("New",0,[data[-1],])
-        send_via_socket("Hello",0,[send_hello for send_hello in neighbour_list if send_hello != data[-1]])
+        new_neighbour_list.append(address_tuple,)
+        send_via_socket('New',[address_tuple,])
+        send_via_socket("Hello",[send_hello for send_hello in neighbour_list if send_hello != address_tuple])
 
 
 def new_recieved(data):
-    if data[-1] not in new_neighbour_list: 
-        new_neighbour_list.append(data[-1])
+    str_address = '"' + data.split("from ",1)[1]
+    address_tuple = ('localhost',int(''.join(c for c in str_address if c.isdigit())))  
+    if address_tuple not in new_neighbour_list: 
+        new_neighbour_list.append(address_tuple)
 
 
 def old_recieved(data):
-    if data[-1] not in new_neighbour_list or old_neighbour_list:   
-        old_neighbour_list.append(data[-1],)
+    str_address = '"' + data.split("from ",1)[1]
+    address_tuple = ('localhost',int(''.join(c for c in str_address if c.isdigit())))
+    if address_tuple not in new_neighbour_list or old_neighbour_list:   
+        old_neighbour_list.append(address_tuple,)
 def key_recieved(data):
-    key = data[1]
-    sharedkey_list[data[-1]] = DH_object.update(key)
-def decrypt_cipher(data):
-    cipher = data[1]
-    h = SHA256.new()
-    h.update((str(sharedkey_list[data[-1]])).encode("utf-8"))
-    plaintext = AES.decryptfunc(h.digest(),cipher,nonces[data[-1]],macs[data[-1]])
-    print(plaintext)
-def store_mac(data):
-    mac = data[1]
-    macs[data[-1]] = mac
-def store_nonce(data):
-    nonce = data[1]
-    nonces[data[-1]] = nonce
+    str_temp = data.split("Key ",1)[1]
+    key_str,str_address = str_temp.split("from ",1)
+    str_address = '"' + str_address 
+    print(str_address)
+    address_tuple = ('localhost',int(''.join(c for c in str_address if c.isdigit()))) 
+    sharedkey_list[address_tuple] = DH_object.update(int(key_str))
+    
 def check_input_string(s):
     while not input_queues[s].empty():
         try:
@@ -206,33 +210,26 @@ def check_input_string(s):
         # Handle empty queue here
             pass
         else:
-            
-            if Stree_completed == False:
-                if data[0] == 'Hello':
-                    hello_recieved(data)
-                if data[0] == 'New':
-                    new_recieved(data)
-                if data[0] == 'Old':
-                    old_recieved(data)
-                if data[0] == 'DHKey':
-                    key_recieved(data)
-                if data[0] == 'Ciphertext':
-                    decrypt_cipher(data)
-                if data[0] == 'MAC':
-                    store_mac(data)
-                if data[0] == 'Nonce':
-                    store_nonce(data)
-def send_via_socket(data_type,data,address_list):
+            if 'Hello' in data:
+                hello_recieved(data)
+            if 'New' in data:
+                new_recieved(data)
+            if 'Old' in data:
+                old_recieved(data)
+            if 'Key' in data:
+                key_recieved(data)
+def send_via_socket(data,address_list):
     #print("sending this",data,"to this",address_list)
     for name,socket in neighbour_conns.items():
             if name in address_list:
-                tupled_data = (data_type,data,address)
-                serialized_data = pickle.dumps(tupled_data)
-                length_data = len(serialized_data)
-                final_data = (length_data).to_bytes(4,byteorder='big') + serialized_data
-                output_queues[socket].put(final_data)
+                output_queues[socket].put((data +" from " + str(address) + "~").encode())
                 with output_lock:
                     outputs.append(socket)
-
+def send_via_socket_encoded(str_type,data,address_list):
+    for name,socket in neighbour_conns.items():
+            if name in address_list:
+                output_queues[socket].put(str_type.encode() + data + (" from " + str(address) + "~").encode())
+                with output_lock:
+                    outputs.append(socket)
 if __name__ == '__main__':
     main()

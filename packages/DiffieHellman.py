@@ -1,8 +1,6 @@
 import pyDHE
-key = 0
 def keyCreation():
-    global key
-    p_key = pyDH.DiffieHellman()
+    p_key = pyDHE.new()
     key = p_key.gen_public_key()
     return key
 
