@@ -1,7 +1,6 @@
 from Crypto.Cipher import AES
 # Encryption
 def AES_Key_Creator(key):
-    print("node 3 ",key)
     cipher = AES.new(key,AES.MODE_EAX)
     return cipher
 def AES_encrypt(cipher_obj,unencrypted_data):

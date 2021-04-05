@@ -13,7 +13,7 @@ from Crypto.Hash import SHA256
 # Create a TCP/IP socket
 conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 neighbour_conns = {}
-is_initiator = True
+is_initiator = False
 conn.setblocking(0)
 neighbour_list = [('localhost',10000),('localhost',10001),('localhost',10002)]
 address = ('localhost', 10003)
