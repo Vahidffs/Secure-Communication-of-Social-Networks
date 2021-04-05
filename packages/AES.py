@@ -10,17 +10,12 @@ def AES_encrypt(cipher_obj,unencrypted_data):
     return ciphertext, MAC , nonce
 # Decryption
 def decryptfunc(key,cipher_text,nonce,tag):
-    print("yep")
-    print("##########node2",key)
-    print(cipher_text)
-    print('nonce',nonce.decode())
-    print(type(nonce.decode()))
 
     cipher_suite = AES.new(key, AES.MODE_EAX, nonce=nonce)
     plain_text = cipher_suite.decrypt(cipher_text)
     try:
         cipher_suite.verify(tag)
-        print("The message is authentic:", plain_text.decode())
+        print("The message is authentic:", plain_text)
     except ValueError:
         print("Key incorrect or message corrupted")
     return plain_text

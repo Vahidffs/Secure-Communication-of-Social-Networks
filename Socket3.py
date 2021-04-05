@@ -15,6 +15,7 @@ conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 neighbour_conns = {}
 is_initiator = False
 conn.setblocking(0)
+
 neighbour_list = [('localhost',10000),('localhost',10001),('localhost',10002)]
 address = ('localhost', 10003)
 
@@ -62,7 +63,7 @@ def main():
     DH_available.wait()
     for neighbour in new_neighbour_list:    
         h = SHA256.new()
-        h.update((str(sharedkey_list[neighbour])).encode("utf-8"))
+        h.update((sharedkey_list[neighbour]).to_bytes(256,byteorder='big'))
         AES_key = AES.AES_Key_Creator(h.digest())
         AES_key_list.append(AES_key)
     print(AES_key_list)
@@ -168,10 +169,10 @@ def sockets():
 
 def hello_recieved(data):
     if data[-1] in new_neighbour_list:
-        send_via_socket("Old",0,[data[-1],])
+        send_via_socket("Old",0,[data[-1]])
     else:
-        new_neighbour_list.append([data[-1],],)
-        send_via_socket("New",0,[data[-1],])
+        new_neighbour_list.append(data[-1])
+        send_via_socket("New",0,[data[-1]])
         send_via_socket("Hello",0,[send_hello for send_hello in neighbour_list if send_hello != data[-1]])
 
 
@@ -182,14 +183,14 @@ def new_recieved(data):
 
 def old_recieved(data):
     if data[-1] not in new_neighbour_list or old_neighbour_list:   
-        old_neighbour_list.append(data[-1],)
+        old_neighbour_list.append(data[-1])
 def key_recieved(data):
     key = data[1]
     sharedkey_list[data[-1]] = DH_object.update(key)
 def decrypt_cipher(data):
     cipher = data[1]
     h = SHA256.new()
-    h.update((str(sharedkey_list[data[-1]])).encode("utf-8"))
+    h.update(sharedkey_list[data[-1]])
     plaintext = AES.decryptfunc(h.digest(),cipher,nonces[data[-1]],macs[data[-1]])
     print(plaintext)
 def store_mac(data):
