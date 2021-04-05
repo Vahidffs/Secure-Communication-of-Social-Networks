@@ -10,6 +10,10 @@ import pyDHE
 import pickle
 import packages.AES as AES
 from Crypto.Hash import SHA256
+from SecretKey import create_secret_key
+from CalculateKey import calculate_secret_key
+
+
 # Create a TCP/IP socket
 conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 neighbour_conns = {}
@@ -24,6 +28,14 @@ old_neighbour_list = []
 AES_key_list = []
 sharedkey_list = {}
 DH_object = pyDHE.new()
+
+secret_key = create_secret_key(16)
+calculated_secret_key = None
+group_key = None
+skey_send_list = []
+secret_key_list = []
+group_key_list = []
+
 for neighbour in neighbour_list:
     neighbour_conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     neighbour_conns[neighbour] = neighbour_conn
@@ -37,6 +49,7 @@ socket_list = []
 outputs = []
 nonces = {}
 macs = {}
+
     # Sockets from which we expect to read
 outputs_available = threading.Event()
 Stree_available = threading.Event()
@@ -45,6 +58,10 @@ Stree_completed = False
 input_queues = {}
 output_queues = {}
 output_lock = threading.Lock()
+Gkey_received = threading.Event()
+GKey_calculated = False
+
+
 def main():
     t_socket = threading.Thread(target=sockets)
     t_socket.start()
@@ -55,6 +72,12 @@ def main():
                 send_via_socket("Hello",0,neighbour_list)
     Stree_available.wait()  
     print("Spanning Tree Created")
+
+    global skey_send_list
+    skey_send_list = new_neighbour_list
+    global group_key_list
+    group_key_list = new_neighbour_list
+
     public_key = DH_object.getPublicKey()
     send_via_socket("DHKey" , public_key,new_neighbour_list)
         #print(len(str(key)))
@@ -64,6 +87,21 @@ def main():
         h.update((sharedkey_list[neighbour]).to_bytes(256,byteorder='big'))
         AES_key = AES.AES_Key_Creator(h.digest())
         AES_key_list.append(AES_key)
+
+    # check to if key calculation can be made
+    if len(skey_send_list) == 1:
+        neighbour_to_receive_skey = skey_send_list[0]
+        global calculated_secret_key
+        calculated_secret_key = calculate_secret_key(secret_key_list, secret_key)
+        print("Calculated secret key: {0}" .format(calculated_secret_key))
+        send_via_socket("SKey", calculated_secret_key, [neighbour_to_receive_skey, ])
+        global GKey_calculated
+        GKey_calculated = True
+
+
+    Gkey_received.wait()
+
+
 def sockets():
 
     while True:
@@ -180,21 +218,44 @@ def new_recieved(data):
 def old_recieved(data):
     if data[-1] not in new_neighbour_list or old_neighbour_list:   
         old_neighbour_list.append(data[-1],)
+
+
 def key_recieved(data):
     key = data[1]
     sharedkey_list[data[-1]] = DH_object.update(key)
+
+
 def decrypt_cipher(data):
     cipher = data[1]
     h = SHA256.new()
     h.update(sharedkey_list[data[-1]])
     plaintext = AES.decryptfunc(h.digest(),cipher,nonces[data[-1]],macs[data[-1]])
     print(plaintext)
+
+
 def store_mac(data):
     mac = data[1]
     macs[data[-1]] = mac
+
+
 def store_nonce(data):
     nonce = data[1]
     nonces[data[-1]] = nonce
+  
+
+def receive_skey(data):
+    if not GKey_calculated:
+        secret_key_list.append(data[1])
+        skey_send_list.remove(data[-1])
+    else:
+        global group_key
+        group_key = data[1]
+        group_key_list.remove(data[-1])
+        if group_key_list:
+            send_via_socket("SKey", group_key, group_key_list)
+            Gkey_received.set()
+
+
 def check_input_string(s):
     while not input_queues[s].empty():
         try:
@@ -219,6 +280,10 @@ def check_input_string(s):
                     store_mac(data)
                 if data[0] == 'Nonce':
                     store_nonce(data)
+                if data[0] == 'SKey':
+                    receive_skey(data)
+
+
 def send_via_socket(data_type,data,address_list):
     for name,socket in neighbour_conns.items():
             if name in address_list:
