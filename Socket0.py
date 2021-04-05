@@ -196,6 +196,7 @@ def sockets():
             # Remove message queue
             del output_queues[s]
         if len(neighbour_list) == (len(new_neighbour_list) + len(old_neighbour_list)):
+            global Stree_completed
             Stree_completed = True
             Stree_available.set()
             if len(sharedkey_list) == len(new_neighbour_list):
