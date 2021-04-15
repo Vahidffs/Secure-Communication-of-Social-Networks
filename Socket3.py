@@ -211,13 +211,13 @@ def check_input_string(s):
                     new_recieved(data)
                 if data[0] == 'Old':
                     old_recieved(data)
-                if data[0] == 'DHKey':
+            if data[0] == 'DHKey':
                     key_recieved(data)
-                if data[0] == 'Ciphertext':
+            if data[0] == 'Ciphertext':
                     decrypt_cipher(data)
-                if data[0] == 'MAC':
+            if data[0] == 'MAC':
                     store_mac(data)
-                if data[0] == 'Nonce':
+            if data[0] == 'Nonce':
                     store_nonce(data)
 def send_via_socket(data_type,data,address_list):
     for name,socket in neighbour_conns.items():

@@ -10,8 +10,8 @@ import pyDHE
 import pickle
 import packages.AES as AES
 from Crypto.Hash import SHA256
-from SecretKey import create_secret_key
-from CalculateKey import calculate_secret_key
+from .SecretKey import create_secret_key
+from .CalculateKey import calculate_secret_key
 
 
 # Create a TCP/IP socket
@@ -273,15 +273,15 @@ def check_input_string(s):
                     new_recieved(data)
                 if data[0] == 'Old':
                     old_recieved(data)
-                if data[0] == 'DHKey':
+            if data[0] == 'DHKey':
                     key_recieved(data)
-                if data[0] == 'Ciphertext':
+            if data[0] == 'Ciphertext':
                     decrypt_cipher(data)
-                if data[0] == 'MAC':
+            if data[0] == 'MAC':
                     store_mac(data)
-                if data[0] == 'Nonce':
+            if data[0] == 'Nonce':
                     store_nonce(data)
-                if data[0] == 'SKey':
+            if data[0] == 'SKey':
                     receive_skey(data)
 
 
