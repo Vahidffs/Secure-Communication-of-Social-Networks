@@ -19,3 +19,26 @@ socket3:
 
 neighbour_list = [('localhost',10000),('localhost',10001),('localhost',10002)]
 address = ('localhost', 10003)
+
+
+UPDATED LIST EMULATING LEAF NODES
+socket0:
+
+neighbour_list = [('localhost', 10001),
+                    ('localhost', 10002), ('localhost', 10003)]
+address = ('localhost', 10000)
+
+socket1:
+
+neighbour_list = [('localhost',10000)]
+address = ('localhost', 10001)
+
+socket2:
+
+neighbour_list = [('localhost',10000)]
+address = ('localhost', 10002)
+
+socket3:
+
+neighbour_list = [('localhost',10000)]
+address = ('localhost', 10003)
